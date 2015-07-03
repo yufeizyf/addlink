@@ -125,7 +125,6 @@ func DealFile(path string) {
 				fwrite.WriteString(urlDescribe)
 				fwrite.WriteString("\n")
 				fwrite.WriteString(line)
-				fwrite.WriteString("\n")
 
 				fmt.Println(urlDescribe)
 			} else {
@@ -211,7 +210,7 @@ func WriteBackAndRemove(temp string, src string) {
 }
 
 func main() {
-	GetFilelist("/home/ubuntu/Documents/GoWork/src/github.com/denverdino/aliyungo/ecs")
+	GetFilelist("/Users/zhangyf/Documents/GitHub/aliyungo/ecs")
 
 	for i := 0; i < len(fileList); i++ {
 		DealFile(fileList[i])
