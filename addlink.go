@@ -85,6 +85,7 @@ var ossChart = map[string]string{
 }
 
 const URL_PREFIX = "http://docs.aliyun.com/#/pub/"
+const DATATYPE_URL_PREFIX = "http://docs.aliyun.com/#/pub/ecs/open-api/datatype&"
 const URL_OSS_PREFIX = "http://docs.aliyun.com/#/pub/oss/api-reference/"
 
 var notexist = make([]string, 5)
@@ -112,19 +113,17 @@ func main() {
 	module = strings.TrimPrefix(module, "\nwindow.docModule=JSON.parse('")
 	module = strings.TrimSuffix(module, "')")
 
-	//GetEcsDocsApi(module)
-	GetOssDocsApi(module)
+	GetEcsDocsApi(module)
+	//GetOssDocsApi(module)
 	//GetFilelist("/Users/zhangyf/Documents/GitHub/aliyungo/ecs")
 	//GetFilelist("/Users/zhangyf/Documents/GoWork/src/github.com/denverdino/aliyungo/ecs")
-	//GetFilelist("/home/ubuntu/Documents/GoWork/src/github.com/denverdino/aliyungo/oss")
-	GetFilelist("/home/ubuntu/Documents/GitHub/aliyungo/oss")
-	// GetFilelist("/home/ubuntu/Documents/GitHub/aliyungo/ecs")
+	GetFilelist("/home/ubuntu/Documents/GoWork/src/github.com/denverdino/aliyungo/ecs")
+	//GetFilelist("/home/ubuntu/Documents/GitHub/aliyungo/oss")
+	//GetFilelist("/home/ubuntu/Documents/GitHub/aliyungo/ecs")
 
-	for i := 0; i < len(fileList); i++ {
-		DealOssFile(fileList[i])
-	}
+	DiffEcsDocAndApi()
 
-	fmt.Println(notexist)
+	fmt.Println("Docs has but not in SDK", diffEcsDocAndSdkResult)
 }
 
 func GetEcsDocsApi(module string) {
@@ -157,6 +156,9 @@ func GetEcsDocsApi(module string) {
 				element := d.(map[string]interface{})
 				funcname := element["name_en"].(string)
 				docsList[funcname] = true
+				if name != "datatype" {
+					docFuncList[funcname] = true
+				}
 			}
 			allDocs[name] = docsList
 		}
@@ -314,8 +316,8 @@ func DealOssFile(path string) {
 	}
 }
 
-func DealFile(path string) {
-	fmt.Println("Dealing file: ", path)
+func DealEcsFile(path string) {
+	fmt.Println("Dealing Ecs file: ", path)
 
 	pkgPath, pkgName, fileName := GetPackageAndFileName(path)
 
@@ -380,6 +382,86 @@ func DealFile(path string) {
 
 		fmt.Println("finish reading", pkgName, url)
 	}
+}
+
+func DealDataType(path string) {
+	fmt.Println("Dealing ECS Data Type: ", path)
+
+	pkgPath, pkgName, fileName := GetPackageAndFileName(path)
+
+	fread, err := os.Open(path)
+	defer fread.Close()
+
+	if err != nil {
+		fmt.Println(path, err)
+		return
+	} else {
+		inbuff := bufio.NewReader(fread)
+
+		newPath := NewFilePath(pkgPath, fileName)
+
+		fwrite, err := os.Create(newPath)
+		defer fwrite.Close()
+		if err != nil {
+			fmt.Println(newPath, err)
+			return
+		} else {
+			fmt.Println(newPath)
+		}
+
+		for {
+			line, err := inbuff.ReadString('\n')
+			if err != nil || io.EOF == err {
+				break
+			}
+
+			//^func
+			isMatch, err := regexp.MatchString("^type", line)
+			if isMatch {
+				dTypeName := strings.ToLower(GetDataType(line))
+				if allDocs["datatype"][dTypeName] {
+					urlDescribe := DATATYPE_URL_PREFIX + dTypeName
+					fwrite.WriteString("//\n")
+					fwrite.WriteString("// You can read doc at ")
+					fwrite.WriteString(urlDescribe)
+					fwrite.WriteString("\n")
+					fwrite.WriteString(line)
+
+					fmt.Println(urlDescribe)
+				} else {
+					dTypeName = dTypeName
+					notexist = append(notexist, dTypeName)
+					fwrite.WriteString(line)
+				}
+
+			} else {
+				fwrite.WriteString(line)
+			}
+		}
+
+		WriteBackAndRemove(newPath, path)
+
+		fmt.Println("finish reading", pkgName)
+	}
+}
+
+func GetDataType(line string) string {
+	fmt.Println(line)
+
+	buff := []byte(line)
+	var nameBytes []byte
+
+	//跳过“type and   space”
+	pos := 4
+	for buff[pos] == ' ' {
+		pos++
+	}
+
+	for i := pos; buff[i] != ' '; i++ {
+		nameBytes = append(nameBytes, buff[i])
+	}
+
+	return string(nameBytes)
 }
 
 func isExistApiDocs(fname string) (string, bool) {
@@ -468,3 +550,49 @@ func WriteBackAndRemove(temp string, src string) {
 	}
 }
 
+var sdkFuncList = make(map[string]bool)
+var docFuncList = make(map[string]bool)
+var diffEcsDocAndSdkResult = make([]string, 10)
+
+func DiffEcsDocAndApi() {
+	fmt.Println("Dealing DiffEcsDocAndApi: ")
+	for i := 0; i < len(fileList); i++ {
+		path := fileList[i]
+		fread, err := os.Open(path)
+		defer fread.Close()
+
+		if err != nil {
+			fmt.Println(path, err)
+			return
+		} else {
+			inbuff := bufio.NewReader(fread)
+
+			for {
+				line, err := inbuff.ReadString('\n')
+				if err != nil || io.EOF == err {
+					break
+				}
+
+				//^func
+				isMatch, err := regexp.MatchString("^func", line)
+				if isMatch {
+					fname := strings.ToLower(GetFuncName(line))
+					sdkFuncList[fname] = true
+				}
+			}
+		}
+	}
+
+	keys := make([]string, 0, len(docFuncList))
+	for k := range docFuncList {
+		keys = append(keys, k)
+	}
+
+	for i := 0; i < len(keys); i++ {
+		name := keys[i]
+
+		if sdkFuncList[name] == false {
+			diffEcsDocAndSdkResult = append(diffEcsDocAndSdkResult, name)
+		}
+	}
+}
